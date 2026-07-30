@@ -3,35 +3,25 @@
 #include <WiFi.h>
 #include <esp_wifi.h>
 
-// ═══════════════════════════════════════════════════════
-// SLAVE ID - CHANGE THIS FOR EACH SLAVE (1 through 10)
-// ═══════════════════════════════════════════════════════
-const int SLAVE_ID =8; // ⚠️ UPDATE THIS FOR EACH SLAVE!
 
-// ═══════════════════════════════════════════════════════
-// MASTER MAC ADDRESS (same for all slaves)
-// ═══════════════════════════════════════════════════════
+const int SLAVE_ID =8; 
+
+
 uint8_t masterAddress[] = {0x30, 0x76, 0xF5, 0xF7, 0x7C, 0xB0};
 
-// ═══════════════════════════════════════════════════════
-// TRAVEL CONSTANTS (90,000 steps = full travel)
-// ═══════════════════════════════════════════════════════
+
 const long FULL    = 90000;
 const long THREE_Q = 67500;
 const long HALF    = 45000;
 const long THIRD   = 30000;
 const long QTR     = 22500;
 
-// ═══════════════════════════════════════════════════════
-// TIMING
-// ═══════════════════════════════════════════════════════
+
 const unsigned long HOME_TIMEOUT_MS      = 180000;
 const unsigned long DEBOUNCE_MS          = 3;
 const unsigned long HEARTBEAT_INTERVAL_MS = 2000; // Send heartbeat every 2s
 
-// ═══════════════════════════════════════════════════════
-// PIN DEFINITIONS
-// ═══════════════════════════════════════════════════════
+
 const int ENABLE_PIN = 12;
 
 AccelStepper m1(AccelStepper::DRIVER, 25, 26);
@@ -43,12 +33,7 @@ AccelStepper m5(AccelStepper::DRIVER, 16, 17);
 AccelStepper* motors[] = {&m1, &m2, &m3, &m4, &m5};
 const int homePins[]   = {21, 19, 18, 14, 13};
 
-// ═══════════════════════════════════════════════════════
-// COMMUNICATION STRUCTURE
-// No struct change needed — slaveId field is repurposed:
-// Master → Slave: slaveId=0 means broadcast, slaveId=X means targeted at slave X
-// Slave → Master: slaveId=SLAVE_ID always (so master knows who sent)
-// ═══════════════════════════════════════════════════════
+
 typedef struct {
   char command[32];
   int  value;
@@ -58,9 +43,7 @@ typedef struct {
 Message incomingMsg;
 Message outgoingMsg;
 
-// ═══════════════════════════════════════════════════════
-// STATE FLAGS
-// ═══════════════════════════════════════════════════════
+
 volatile int activePattern  = 0; // 0=Idle, 1-4=Pattern, 99=Homing
 bool connectedToMaster      = false;
 int  foundChannel           = 1;
@@ -69,9 +52,7 @@ bool isHomed                = false; // Tracks whether this slave has homed
 unsigned long lastFuzzyUpdate   = 0;
 unsigned long lastHeartbeatSent = 0;
 
-// ═══════════════════════════════════════════════════════
-// FUZZY VELOCITY CONTROL
-// ═══════════════════════════════════════════════════════
+
 float calculateFuzzySpeed(float distanceToGo, float maxSpeed) {
   float d = abs(distanceToGo);
   if (d < 2000)  return maxSpeed * 0.3f;
@@ -88,12 +69,7 @@ void applyFuzzyControl() {
   }
 }
 
-// ═══════════════════════════════════════════════════════
-// HEARTBEAT — non-blocking, sends every 2s
-// Called from loop(), runAllUntilDone(), homeAllMotors()
-// so master always knows we're alive even during movement
-// value carries isHomed state so master can track it
-// ═══════════════════════════════════════════════════════
+
 void sendHeartbeat() {
   unsigned long now = millis();
   if (now - lastHeartbeatSent >= HEARTBEAT_INTERVAL_MS) {
@@ -102,23 +78,21 @@ void sendHeartbeat() {
   }
 }
 
-// ═══════════════════════════════════════════════════════
-// MOTOR HELPERS
-// ═══════════════════════════════════════════════════════
+
 void runAllUntilDone() {
   while (m1.distanceToGo() != 0 || m2.distanceToGo() != 0 ||
          m3.distanceToGo() != 0 || m4.distanceToGo() != 0 ||
          m5.distanceToGo() != 0) {
-    if (activePattern == 0) return; // Emergency stop
+    if (activePattern == 0) return; 
     applyFuzzyControl();
     m1.run(); m2.run(); m3.run(); m4.run(); m5.run();
-    sendHeartbeat(); // Keep master updated during movement
+    sendHeartbeat(); 
   }
 }
 
 void moveAll(long pos) {
   m1.moveTo(pos); m2.moveTo(pos); m3.moveTo(pos);
-  m4.moveTo(-pos); // Motor 4 reversed
+  m4.moveTo(-pos); 
   m5.moveTo(pos);
   runAllUntilDone();
 }
@@ -134,9 +108,7 @@ void moveOne(AccelStepper &motor, long pos) {
   }
 }
 
-// ═══════════════════════════════════════════════════════
-// HOMING
-// ═══════════════════════════════════════════════════════
+
 void homeAllMotors() {
   Serial.println("🏠 Homing...");
   isHomed = false;
@@ -158,7 +130,7 @@ void homeAllMotors() {
 
   while (!(h[0] && h[1] && h[2] && h[3] && h[4])) {
     unsigned long t = millis();
-    sendHeartbeat(); // Stay visible to master during homing
+    sendHeartbeat(); 
 
     for (int i = 0; i < 5; i++) {
       if (h[i]) continue;
@@ -197,29 +169,26 @@ void homeAllMotors() {
   sendToMaster("HOMING_DONE", 1);
 }
 
-// ═══════════════════════════════════════════════════════
-// PATTERNS
-// ═══════════════════════════════════════════════════════
+
 void patternOne() {
-  // ── PHASE 1: THE PERFECT V-SHAPE (Tension Build) ─────────────────
-  // Edges drop deep, center stays high, creating a sweeping valley
+  
   m1.moveTo(FULL);
   m2.moveTo(HALF);
-  m3.moveTo(QTR);       // Center point
-  m4.moveTo(-HALF);     // Reversed motor
+  m3.moveTo(QTR);       
+  m4.moveTo(-HALF);     
   m5.moveTo(FULL);
   runAllUntilDone();
-  delay(300);           // Brief elegant pause at peak tension
+  delay(300);           
 
   
-  // The shape violently inside-outs: Center drops hard, edges snap high
+  
   m1.moveTo(QTR);
   m2.moveTo(THREE_Q);
-  m3.moveTo(FULL);      // Center drops completely
+  m3.moveTo(FULL);      
   m4.moveTo(-THREE_Q);
   m5.moveTo(QTR);
   runAllUntilDone();
-  delay(500);           // Let the inverted wave settle
+  delay(500);           
 
   
   m1.moveTo(5000);   while (m1.distanceToGo() != 0) { m1.run(); applyFuzzyControl(); sendHeartbeat(); }
@@ -228,11 +197,11 @@ void patternOne() {
   m4.moveTo(-5000);  while (m4.distanceToGo() != 0) { m4.run(); applyFuzzyControl(); sendHeartbeat(); }
   m5.moveTo(5000);   while (m5.distanceToGo() != 0) { m5.run(); applyFuzzyControl(); sendHeartbeat(); }
   
-  delay(800); // Settle before the next pattern loops
+  delay(800); 
 }
 
 void patternTwo() {
-  // ── PHASE 1: THE RIPPLE UP ──────────────────────────────────────
+  
   m1.moveTo(FULL);
   delay(150); 
   m2.moveTo(FULL);
@@ -246,7 +215,6 @@ void patternTwo() {
   runAllUntilDone();
   delay(600); 
 
-  // ── PHASE 2: THE CONVERGING CRASH ───────────────────────────────
   m3.moveTo(QTR); 
   delay(200);
   m2.moveTo(QTR); m4.moveTo(-QTR);
@@ -256,14 +224,14 @@ void patternTwo() {
   runAllUntilDone();
   delay(400);
 
-  // ── PHASE 3: THE CLEAN RESET ──────────────────────────────────
-  // Guaranteed return to the 5000 position
+  
+  
   moveAll(5000);
-  delay(1000); // Hold the rest position for 1 second
+  delay(1000); 
 }
 
 void patternThree() {
-  // Alternating Pulse
+  
   for (int r = 0; r < 3; r++) {
     m1.moveTo(FULL);  m3.moveTo(FULL);  m5.moveTo(FULL);
     m2.moveTo(QTR);   m4.moveTo(-QTR);
@@ -276,7 +244,7 @@ void patternThree() {
 }
 
 void patternFour() {
-  // Breathing Motion
+  
   m1.moveTo(THIRD);  m2.moveTo(THREE_Q);
   m3.moveTo(FULL);   m4.moveTo(-THREE_Q); m5.moveTo(THIRD);
   runAllUntilDone(); delay(800);
@@ -287,9 +255,7 @@ void patternFour() {
   moveAll(5000);     delay(1000);
 }
 
-// ═══════════════════════════════════════════════════════
-// COMMUNICATION
-// ═══════════════════════════════════════════════════════
+
 void sendToMaster(const char* cmd, int val) {
   strcpy(outgoingMsg.command, cmd);
   outgoingMsg.value   = val;
@@ -300,16 +266,13 @@ void sendToMaster(const char* cmd, int val) {
 void onDataReceive(const esp_now_recv_info_t *recv_info, const uint8_t *data, int len) {
   memcpy(&incomingMsg, data, sizeof(incomingMsg));
 
-  // First message = master found, lock in
+  
   if (!connectedToMaster) { connectedToMaster = true; return; }
 
-  // Ignore master heartbeats
+  
   if (strcmp(incomingMsg.command, "HEARTBEAT") == 0) return;
 
-  // ✅ KEY CHANGE: Filter targeted messages
-  // slaveId == 0 → broadcast (accept)
-  // slaveId == SLAVE_ID → targeted at us (accept)
-  // anything else → not for us (ignore)
+  
   if (incomingMsg.slaveId != 0 && incomingMsg.slaveId != SLAVE_ID) return;
 
   if      (strcmp(incomingMsg.command, "PATTERN_1") == 0) activePattern = 1;
@@ -323,9 +286,7 @@ void onDataReceive(const esp_now_recv_info_t *recv_info, const uint8_t *data, in
   }
 }
 
-// ═══════════════════════════════════════════════════════
-// CHANNEL SCANNING
-// ═══════════════════════════════════════════════════════
+
 void scanForMaster() {
   int ch = 1;
   while (!connectedToMaster) {
@@ -339,9 +300,7 @@ void scanForMaster() {
   }
 }
 
-// ═══════════════════════════════════════════════════════
-// SETUP
-// ═══════════════════════════════════════════════════════
+
 void setup() {
   Serial.begin(115200);
   delay(500);
@@ -354,7 +313,7 @@ void setup() {
   Serial.print("MAC: "); Serial.println(WiFi.macAddress());
 
   pinMode(ENABLE_PIN, OUTPUT);
-  digitalWrite(ENABLE_PIN, HIGH); // Disabled during boot
+  digitalWrite(ENABLE_PIN, HIGH); 
 
   for (int i = 0; i < 5; i++) {
     pinMode(homePins[i], INPUT_PULLUP);
@@ -364,7 +323,7 @@ void setup() {
   }
 
   delay(200);
-  digitalWrite(ENABLE_PIN, LOW); // Enable drivers after settle
+  digitalWrite(ENABLE_PIN, LOW); 
 
   WiFi.disconnect();
   esp_now_init();
@@ -384,16 +343,14 @@ void setup() {
 
   Serial.printf("✅ Master found on channel %d\n\n", foundChannel);
 
-  // ✅ KEY CHANGE: Stay IDLE — do NOT auto-home
+  
   activePattern = 0;
   Serial.println("⏳ IDLE — waiting for HOME command from dashboard\n");
 }
 
-// ═══════════════════════════════════════════════════════
-// LOOP
-// ═══════════════════════════════════════════════════════
+
 void loop() {
-  sendHeartbeat(); // Keep master updated while idle
+  sendHeartbeat(); 
 
   if (activePattern > 0) {
     if      (activePattern == 1)  patternOne();

@@ -11,7 +11,7 @@ const char* password = "sadewna1";
 const int NUM_SLAVES    = 10;
 const int ACTIVE_SLAVES = 10;
 
-// If no heartbeat received within this window, slave is offline
+
 const unsigned long SLAVE_TIMEOUT_MS = 6000;
 
 uint8_t slaveAddresses[NUM_SLAVES][6] = {
@@ -30,13 +30,7 @@ uint8_t slaveAddresses[NUM_SLAVES][6] = {
 AsyncWebServer server(80);
 AsyncWebSocket ws("/ws");
 
-// ═══════════════════════════════════════════════════════
-// COMMUNICATION STRUCTURE
-// Protocol note:
-//   Master → Slave  slaveId=0  broadcast to all
-//   Master → Slave  slaveId=X  targeted at slave X only
-//   Slave  → Master slaveId=SLAVE_ID always
-// ═══════════════════════════════════════════════════════
+
 typedef struct {
   char command[32];
   int  value;
@@ -46,9 +40,7 @@ typedef struct {
 Message outgoingMsg;
 Message incomingMsg;
 
-// ═══════════════════════════════════════════════════════
-// SYSTEM STATE
-// ═══════════════════════════════════════════════════════
+
 String systemStatus    = "INITIALIZING";
 bool   autoCycleRunning = false;
 int    currentPattern   = 0;
@@ -56,17 +48,14 @@ int    currentPattern   = 0;
 unsigned long lastBeacon       = 0;
 unsigned long lastTimeoutCheck = 0;
 
-// ✅ Per-slave granular state
+
 bool          slaveConnected[NUM_SLAVES]     = {};
 bool          slaveHomed[NUM_SLAVES]         = {};
 bool          slaveRunning[NUM_SLAVES]       = {};
 bool          slaveDone[NUM_SLAVES]          = {};
 unsigned long lastSlaveHeartbeat[NUM_SLAVES] = {};
 
-// ═══════════════════════════════════════════════════════
-// BROADCAST TO DASHBOARD
-// Now includes connected, homed, running per slave
-// ═══════════════════════════════════════════════════════
+
 void broadcastToReact() {
   StaticJsonDocument<2048> doc;
   doc["status"]          = systemStatus;
@@ -91,11 +80,11 @@ void broadcastToReact() {
 
 
 
-//this sends a broadcast packet to slave
+
 void broadcastToAllSlaves(const char* cmd, int value) {
   strcpy(outgoingMsg.command, cmd);
   outgoingMsg.value   = value;
-  outgoingMsg.slaveId = 0; // broadcast
+  outgoingMsg.slaveId = 0; 
   Serial.printf("\n📡 Broadcast: %s\n", cmd);
   for (int i = 0; i < ACTIVE_SLAVES; i++) {
     esp_err_t r = esp_now_send(slaveAddresses[i], (uint8_t*)&outgoingMsg, sizeof(outgoingMsg));
@@ -110,16 +99,14 @@ void sendToSlave(int targetId, const char* cmd, int value) {
   if (targetId < 1 || targetId > NUM_SLAVES) return;
   strcpy(outgoingMsg.command, cmd);
   outgoingMsg.value   = value;
-  outgoingMsg.slaveId = targetId; // targeted
+  outgoingMsg.slaveId = targetId; 
   esp_err_t r = esp_now_send(slaveAddresses[targetId - 1],
                               (uint8_t*)&outgoingMsg, sizeof(outgoingMsg));
   Serial.printf("📡 → Slave %d (targeted) %s: %s\n",
                 targetId, cmd, r == ESP_OK ? "✓" : "✗ FAILED");
 }
 
-// ═══════════════════════════════════════════════════════
-// CHECK IF ALL CONNECTED SLAVES ARE DONE
-// ═══════════════════════════════════════════════════════
+
 bool allActiveSlavesDone() {
   int count = 0;
   for (int i = 0; i < ACTIVE_SLAVES; i++) {
@@ -128,11 +115,11 @@ bool allActiveSlavesDone() {
       if (!slaveDone[i]) return false;
     }
   }
-  return count > 0; // At least one must be connected
+  return count > 0; 
 }
 
 
-// ESP-NOW RECEIVE CALLBACK-this works in setup() function
+
 
 void onDataReceive(const esp_now_recv_info_t *recv_info,
                    const uint8_t *data, int len) {
@@ -141,7 +128,7 @@ void onDataReceive(const esp_now_recv_info_t *recv_info,
   if (id < 1 || id > NUM_SLAVES) return;
   int idx = id - 1;
 
-  // ── Heartbeat — update connection state ──────────────
+  
   if (strcmp(incomingMsg.command, "SLAVE_HEARTBEAT") == 0) {
     if (!slaveConnected[idx])
       Serial.printf("✓ Slave %d came online\n", id);
@@ -153,19 +140,19 @@ void onDataReceive(const esp_now_recv_info_t *recv_info,
 
   Serial.printf("📩 Slave %d: %s\n", id, incomingMsg.command);
 
-  // ── Homing done ───────────────────────────────────────
+  
   if (strcmp(incomingMsg.command, "HOMING_DONE") == 0) {
     slaveHomed[idx]   = true;
     slaveRunning[idx] = false;
     Serial.printf("✓ Slave %d homed and ready\n", id);
 
-    // Check if all connected slaves are now homed
+    
     bool allHomed = true;
     for (int i = 0; i < ACTIVE_SLAVES; i++)
       if (slaveConnected[i] && !slaveHomed[i]) { allHomed = false; break; }
     if (allHomed) systemStatus = "ALL_SLAVES_READY";
   }
-  // ── Pattern done ──────────────────────────────────────
+  
   else if (strcmp(incomingMsg.command, "PATTERN_DONE") == 0) {
     slaveDone[idx]    = true;
     slaveRunning[idx] = false;
@@ -188,7 +175,7 @@ void onDataReceive(const esp_now_recv_info_t *recv_info,
       }
     }
   }
-  // ── Stopped ───────────────────────────────────────────
+  
   else if (strcmp(incomingMsg.command, "STOPPED") == 0) {
     slaveRunning[idx] = false;
     systemStatus = "STOPPED";
@@ -197,9 +184,7 @@ void onDataReceive(const esp_now_recv_info_t *recv_info,
   broadcastToReact();
 }
 
-// ═══════════════════════════════════════════════════════
-// WEBSOCKET EVENT HANDLER
-// ═══════════════════════════════════════════════════════
+
 void onWebSocketEvent(AsyncWebSocket* server,
                       AsyncWebSocketClient* client,
                       AwsEventType type,
@@ -218,7 +203,7 @@ void onWebSocketEvent(AsyncWebSocket* server,
       String msg = (char*)data;
       Serial.printf("🌐 Dashboard: %s\n", msg.c_str());
 
-      // ── Global pattern commands ───────────────────────
+      
       if (msg.startsWith("PATTERN_") && !msg.startsWith("PATTERN_DONE")) {
         autoCycleRunning = false;
         currentPattern   = msg.substring(8).toInt();
@@ -229,7 +214,7 @@ void onWebSocketEvent(AsyncWebSocket* server,
         broadcastToAllSlaves(msg.c_str(), 1);
         systemStatus = msg + "_RUNNING";
       }
-      // ── Auto-cycle ────────────────────────────────────
+    
       else if (msg == "START_AUTO_CYCLE") {
         autoCycleRunning = true;
         currentPattern   = 1;
@@ -240,7 +225,7 @@ void onWebSocketEvent(AsyncWebSocket* server,
         broadcastToAllSlaves("PATTERN_1", 1);
         systemStatus = "PATTERN_1_RUNNING";
       }
-      // ── Individual HOME: HOME_3 homes slave 3 ─────────
+      
       else if (msg.startsWith("HOME_")) {
         int targetId = msg.substring(5).toInt();
         if (targetId >= 1 && targetId <= NUM_SLAVES
@@ -252,7 +237,7 @@ void onWebSocketEvent(AsyncWebSocket* server,
           Serial.printf("🏠 Homing Slave %d\n", targetId);
         }
       }
-      // ── Stop all ──────────────────────────────────────
+      
       else if (msg == "STOP_ALL") {
         autoCycleRunning = false;
         for (int i = 0; i < NUM_SLAVES; i++) slaveRunning[i] = false;
@@ -260,7 +245,7 @@ void onWebSocketEvent(AsyncWebSocket* server,
         systemStatus = "STOPPED";
       }
       else if (msg == "REQUEST_STATUS") {
-        // Just reply below
+        
       }
 
       broadcastToReact();
@@ -268,9 +253,7 @@ void onWebSocketEvent(AsyncWebSocket* server,
   }
 }
 
-// ═══════════════════════════════════════════════════════
-// SETUP
-// ═══════════════════════════════════════════════════════
+
 void setup() {
   Serial.begin(115200);
   delay(1000);
@@ -320,19 +303,17 @@ void setup() {
   Serial.println("\n✅ MASTER READY\n");
 }
 
-// ═══════════════════════════════════════════════════════
-// LOOP
-// ═══════════════════════════════════════════════════════
+
 void loop() {
   ws.cleanupClients();
 
-  // Heartbeat to slaves — helps maintain channel lock
+
   if (millis() - lastBeacon > 3000) {
     broadcastToAllSlaves("HEARTBEAT", WiFi.channel());
     lastBeacon = millis();
   }
 
-  // ✅ Check for slave connection timeouts every second
+
   if (millis() - lastTimeoutCheck > 1000) {
     lastTimeoutCheck = millis();
     bool changed = false;

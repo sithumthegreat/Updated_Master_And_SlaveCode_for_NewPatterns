@@ -3,35 +3,24 @@
 #include <WiFi.h>
 #include <esp_wifi.h>
 
-// ═══════════════════════════════════════════════════════
-// SLAVE ID - CHANGE THIS FOR EACH SLAVE (1 through 10)
-// ═══════════════════════════════════════════════════════
-const int SLAVE_ID = 1 ; //  UPDATE FOR  SLAVE!
 
-// ═══════════════════════════════════════════════════════
-// MASTER MAC ADDRESS (same for all slaves)
-// ═══════════════════════════════════════════════════════
+const int SLAVE_ID = 1 ; 
+
 uint8_t masterAddress[] = {0x30, 0x76, 0xF5, 0xF7, 0x7C, 0xB0};
 
-// ═══════════════════════════════════════════════════════
-// TRAVEL CONSTANTS (90,000 steps = full travel)
-// ═══════════════════════════════════════════════════════
+
 const long FULL    = 90000;
 const long THREE_Q = 67500;
 const long HALF    = 45000;
 const long THIRD   = 30000;
 const long QTR     = 22500;
 
-// ═══════════════════════════════════════════════════════
-// TIMING
-// ═══════════════════════════════════════════════════════
+
 const unsigned long HOME_TIMEOUT_MS      = 180000;
 const unsigned long DEBOUNCE_MS          = 3;
 const unsigned long HEARTBEAT_INTERVAL_MS = 2000; // Send heartbeat every 2s
 
-// ═══════════════════════════════════════════════════════
-// PIN DEFINITIONS
-// ═══════════════════════════════════════════════════════
+
 const int ENABLE_PIN = 12;
 
 AccelStepper m1(AccelStepper::DRIVER, 25, 26);
@@ -43,12 +32,7 @@ AccelStepper m5(AccelStepper::DRIVER, 16, 17);
 AccelStepper* motors[] = {&m1, &m2, &m3, &m4, &m5};
 const int homePins[]   = {21, 19, 18, 14, 13};
 
-// ═══════════════════════════════════════════════════════
-// COMMUNICATION STRUCTURE
-// No struct change needed — slaveId field is repurposed:
-// Master → Slave: slaveId=0 means broadcast, slaveId=X means targeted at slave X
-// Slave → Master: slaveId=SLAVE_ID always (so master knows who sent)
-// ═══════════════════════════════════════════════════════
+
 typedef struct {
   char command[32];
   int  value;
@@ -58,9 +42,7 @@ typedef struct {
 Message incomingMsg;
 Message outgoingMsg;
 
-// ═══════════════════════════════════════════════════════
-// STATE FLAGS
-// ═══════════════════════════════════════════════════════
+
 volatile int activePattern  = 0; // 0=Idle, 1-4=Pattern, 99=Homing
 bool connectedToMaster      = false;
 int  foundChannel           = 1;
@@ -69,9 +51,7 @@ bool isHomed                = false; // Tracks whether this slave has homed
 unsigned long lastFuzzyUpdate   = 0;
 unsigned long lastHeartbeatSent = 0;
 
-// ═══════════════════════════════════════════════════════
-// FUZZY VELOCITY CONTROL
-// ═══════════════════════════════════════════════════════
+
 float calculateFuzzySpeed(float distanceToGo, float maxSpeed) {
   float d = abs(distanceToGo);
   if (d < 2000)  return maxSpeed * 0.3f;
@@ -88,12 +68,7 @@ void applyFuzzyControl() {
   }
 }
 
-// ═══════════════════════════════════════════════════════
-// HEARTBEAT — non-blocking, sends every 2s
-// Called from loop(), runAllUntilDone(), homeAllMotors()
-// so master always knows we're alive even during movement
-// value carries isHomed state so master can track it
-// ═══════════════════════════════════════════════════════
+
 void sendHeartbeat() {
   unsigned long now = millis();
   if (now - lastHeartbeatSent >= HEARTBEAT_INTERVAL_MS) {
@@ -102,23 +77,21 @@ void sendHeartbeat() {
   }
 }
 
-// ═══════════════════════════════════════════════════════
-// MOTOR HELPERS
-// ═══════════════════════════════════════════════════════
+
 void runAllUntilDone() {
   while (m1.distanceToGo() != 0 || m2.distanceToGo() != 0 ||
          m3.distanceToGo() != 0 || m4.distanceToGo() != 0 ||
          m5.distanceToGo() != 0) {
-    if (activePattern == 0) return; // Emergency stop
+    if (activePattern == 0) 
     applyFuzzyControl();
     m1.run(); m2.run(); m3.run(); m4.run(); m5.run();
-    sendHeartbeat(); // Keep master updated during movement
+    sendHeartbeat(); 
   }
 }
 
 void moveAll(long pos) {
   m1.moveTo(pos); m2.moveTo(pos); m3.moveTo(pos);
-  m4.moveTo(-pos); // Motor 4 reversed
+  m4.moveTo(-pos); 
   m5.moveTo(pos);
   runAllUntilDone();
 }
@@ -134,9 +107,7 @@ void moveOne(AccelStepper &motor, long pos) {
   }
 }
 
-// ═══════════════════════════════════════════════════════
-// HOMING
-// ═══════════════════════════════════════════════════════
+
 void homeAllMotors() {
   Serial.println("🏠 Homing...");
   isHomed = false;
@@ -158,7 +129,7 @@ void homeAllMotors() {
 
   while (!(h[0] && h[1] && h[2] && h[3] && h[4])) {
     unsigned long t = millis();
-    sendHeartbeat(); // Stay visible to master during homing
+    sendHeartbeat(); 
 
     for (int i = 0; i < 5; i++) {
       if (h[i]) continue;
@@ -197,41 +168,39 @@ void homeAllMotors() {
   sendToMaster("HOMING_DONE", 1);
 }
 
-// ═══════════════════════════════════════════════════════
-// PATTERNS
-// ═══════════════════════════════════════════════════════
+
 void patternOne() {
-  // 1. Move M1-M4 to 45,000 (HALF) and M5 to 22,500 (QTR) simultaneously
+  
   m1.moveTo(HALF);
   m2.moveTo(HALF);
   m3.moveTo(HALF);
-  m4.moveTo(-HALF);  // M4 is reversed
-  m5.moveTo(QTR);    // M5 at 22,500
+  m4.moveTo(-HALF);  
+  m5.moveTo(QTR);    
   
-  // Run all motors in parallel until they reach their respective positions
+  
   while (m1.distanceToGo() != 0 || m2.distanceToGo() != 0 || 
          m3.distanceToGo() != 0 || m4.distanceToGo() != 0 || 
          m5.distanceToGo() != 0) {
-    if (activePattern == 0) return; // Emergency stop check
+    if (activePattern == 0) return; 
     applyFuzzyControl();
     m1.run(); m2.run(); m3.run(); m4.run(); m5.run();
-    sendHeartbeat(); // Keep the connection alive
+    sendHeartbeat(); 
   }
 
 
-  // 2. Wait for 2 minutes (120,000 ms) while keeping the system alive
+  
   unsigned long waitStart = millis();
   while (millis() - waitStart < 12000) {
     if (activePattern == 0) return; // Allow manual STOP
-    //sendHeartbeat(); // Crucial: prevents Master from timing out the slave
+    
     delay(10); 
   }
 
 
-  // 3. Move all back to 5000 simultaneously
+  
   moveAll(5000); 
   
-  delay(800); // Settle time
+  delay(800); 
 }
 
 
