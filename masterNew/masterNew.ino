@@ -4,8 +4,8 @@
 #include <ArduinoJson.h>
 
 
-const char* ssid     = "Sadewna";
-const char* password = "sadewna1";
+const char* ssid     = "";
+const char* password = "";
 
 
 const int NUM_SLAVES    = 10;
