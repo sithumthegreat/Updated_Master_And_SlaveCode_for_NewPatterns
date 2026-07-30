@@ -3,15 +3,11 @@
 #include <esp_now.h>
 #include <ArduinoJson.h>
 
-// ═══════════════════════════════════════════════════════
-// WIFI CONFIGURATION
-// ═══════════════════════════════════════════════════════
+
 const char* ssid     = "Sadewna";
 const char* password = "sadewna1";
 
-// ═══════════════════════════════════════════════════════
-// SLAVE CONFIGURATION
-// ═══════════════════════════════════════════════════════
+
 const int NUM_SLAVES    = 10;
 const int ACTIVE_SLAVES = 10;
 
@@ -108,8 +104,7 @@ void broadcastToAllSlaves(const char* cmd, int value) {
 }
 
 
-// SEND TARGETED COMMAND TO ONE SPECIFIC SLAVE
-// slaveId in message = target, so slave filters by it
+
 
 void sendToSlave(int targetId, const char* cmd, int value) {
   if (targetId < 1 || targetId > NUM_SLAVES) return;

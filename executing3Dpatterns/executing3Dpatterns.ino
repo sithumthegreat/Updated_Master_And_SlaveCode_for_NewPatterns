@@ -6,7 +6,7 @@
 // ═══════════════════════════════════════════════════════
 // SLAVE ID - CHANGE THIS FOR EACH SLAVE (1 through 10)
 // ═══════════════════════════════════════════════════════
-const int SLAVE_ID =8; // ⚠️ UPDATE THIS FOR EACH SLAVE!
+const int SLAVE_ID = 1 ; //  UPDATE FOR  SLAVE!
 
 // ═══════════════════════════════════════════════════════
 // MASTER MAC ADDRESS (same for all slaves)
@@ -201,35 +201,43 @@ void homeAllMotors() {
 // PATTERNS
 // ═══════════════════════════════════════════════════════
 void patternOne() {
-  // ── PHASE 1: THE PERFECT V-SHAPE (Tension Build) ─────────────────
-  // Edges drop deep, center stays high, creating a sweeping valley
-  m1.moveTo(FULL);
+  // 1. Move M1-M4 to 45,000 (HALF) and M5 to 22,500 (QTR) simultaneously
+  m1.moveTo(HALF);
   m2.moveTo(HALF);
-  m3.moveTo(QTR);       // Center point
-  m4.moveTo(-HALF);     // Reversed motor
-  m5.moveTo(FULL);
-  runAllUntilDone();
-  delay(300);           // Brief elegant pause at peak tension
+  m3.moveTo(HALF);
+  m4.moveTo(-HALF);  // M4 is reversed
+  m5.moveTo(QTR);    // M5 at 22,500
+  
+  // Run all motors in parallel until they reach their respective positions
+  while (m1.distanceToGo() != 0 || m2.distanceToGo() != 0 || 
+         m3.distanceToGo() != 0 || m4.distanceToGo() != 0 || 
+         m5.distanceToGo() != 0) {
+    if (activePattern == 0) return; // Emergency stop check
+    applyFuzzyControl();
+    m1.run(); m2.run(); m3.run(); m4.run(); m5.run();
+    sendHeartbeat(); // Keep the connection alive
+  }
 
-  
-  // The shape violently inside-outs: Center drops hard, edges snap high
-  m1.moveTo(QTR);
-  m2.moveTo(THREE_Q);
-  m3.moveTo(FULL);      // Center drops completely
-  m4.moveTo(-THREE_Q);
-  m5.moveTo(QTR);
-  runAllUntilDone();
-  delay(500);           // Let the inverted wave settle
 
+  // 2. Wait for 2 minutes (120,000 ms) while keeping the system alive
+  unsigned long waitStart = millis();
+  while (millis() - waitStart < 12000) {
+    if (activePattern == 0) return; // Allow manual STOP
+    //sendHeartbeat(); // Crucial: prevents Master from timing out the slave
+    delay(10); 
+  }
+
+
+  // 3. Move all back to 5000 simultaneously
+  moveAll(5000); 
   
-  m1.moveTo(5000);   while (m1.distanceToGo() != 0) { m1.run(); applyFuzzyControl(); sendHeartbeat(); }
-  m2.moveTo(5000);   while (m2.distanceToGo() != 0) { m2.run(); applyFuzzyControl(); sendHeartbeat(); }
-  m3.moveTo(5000);   while (m3.distanceToGo() != 0) { m3.run(); applyFuzzyControl(); sendHeartbeat(); }
-  m4.moveTo(-5000);  while (m4.distanceToGo() != 0) { m4.run(); applyFuzzyControl(); sendHeartbeat(); }
-  m5.moveTo(5000);   while (m5.distanceToGo() != 0) { m5.run(); applyFuzzyControl(); sendHeartbeat(); }
-  
-  delay(800); // Settle before the next pattern loops
+  delay(800); // Settle time
 }
+
+
+
+
+
 
 void patternTwo() {
   // ── PHASE 1: THE RIPPLE UP ──────────────────────────────────────
@@ -306,10 +314,7 @@ void onDataReceive(const esp_now_recv_info_t *recv_info, const uint8_t *data, in
   // Ignore master heartbeats
   if (strcmp(incomingMsg.command, "HEARTBEAT") == 0) return;
 
-  // ✅ KEY CHANGE: Filter targeted messages
-  // slaveId == 0 → broadcast (accept)
-  // slaveId == SLAVE_ID → targeted at us (accept)
-  // anything else → not for us (ignore)
+
   if (incomingMsg.slaveId != 0 && incomingMsg.slaveId != SLAVE_ID) return;
 
   if      (strcmp(incomingMsg.command, "PATTERN_1") == 0) activePattern = 1;
